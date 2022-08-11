@@ -1,19 +1,4 @@
-#include <arpa/inet.h> /* inet_ntoa */
-#include <signal.h>
-#include <dirent.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <time.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/sendfile.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
+#include "tiny.h"
 
 #define LISTENQ  1024  /* second argument to listen() */
 #define MAXLINE 1024   /* max length of a line */
@@ -37,15 +22,6 @@ typedef struct {
 	char *rio_bufptr;           /* next unread byte in this buf */
 	char rio_buf[RIO_BUFSIZE];  /* internal buffer */
 } rio_t;
-
-/* Simplifies calls to bind(), connect(), and accept() */
-typedef struct sockaddr SA;
-
-typedef struct {
-	char filename[512];
-	off_t offset;              /* for support Range */
-	size_t end;
-} http_request;
 
 typedef struct {
 	const char *extension;
@@ -437,7 +413,7 @@ void serve_static(int out_fd, int in_fd, http_request *req,
 	}
 }
 
-void process(int fd, struct sockaddr_in *clientaddr) {
+char *process(int fd, struct sockaddr_in *clientaddr) {
 #ifdef LOG_ACCESS
 	printf("accept request, fd is %d, pid is %d\n", fd, getpid());
 #endif
@@ -473,6 +449,10 @@ void process(int fd, struct sockaddr_in *clientaddr) {
 #ifdef LOG_ACCESS
 	log_access(status, clientaddr, &req);
 #endif
+    char *ret = malloc(strlen(req.filename) + 1);
+    strncpy(ret, req.filename, strlen(req.filename) + 1);
+
+    return ret;
 }
 
 void print_help()
@@ -485,73 +465,73 @@ void print_help()
 	printf("default port is %d.\n", DEFAULT_PORT);
 }
 
-int main(int argc, char** argv) {
+// int main(int argc, char** argv) {
 
-	if(argc > 1 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")))
-	{
-		print_help();
-		return 0;
-	}
+// 	if(argc > 1 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")))
+// 	{
+// 		print_help();
+// 		return 0;
+// 	}
 
-	struct sockaddr_in clientaddr;
-	int default_port = DEFAULT_PORT,
-		listenfd,
-		connfd;
-	char buf[256];
-	char *path = getcwd(buf, 256);
-	socklen_t clientlen = sizeof clientaddr;
-	if(argc == 2) {
-		if(argv[1][0] >= '0' && argv[1][0] <= '9') {
-			default_port = atoi(argv[1]);
-		} else {
-			path = argv[1];
-			if(chdir(path) != 0) {
-				perror(path);
-				exit(1);
-			}
-		}
-	} else if (argc == 3) {
-		default_port = atoi(argv[2]);
-		path = argv[1];
-		if(chdir(path) != 0) {
-			perror(path);
-			exit(1);
-		}
-	}
-	printf("serve directory '%s'\n", path);
+// 	struct sockaddr_in clientaddr;
+// 	int default_port = DEFAULT_PORT,
+// 		listenfd,
+// 		connfd;
+// 	char buf[256];
+// 	char *path = getcwd(buf, 256);
+// 	socklen_t clientlen = sizeof clientaddr;
+// 	if(argc == 2) {
+// 		if(argv[1][0] >= '0' && argv[1][0] <= '9') {
+// 			default_port = atoi(argv[1]);
+// 		} else {
+// 			path = argv[1];
+// 			if(chdir(path) != 0) {
+// 				perror(path);
+// 				exit(1);
+// 			}
+// 		}
+// 	} else if (argc == 3) {
+// 		default_port = atoi(argv[2]);
+// 		path = argv[1];
+// 		if(chdir(path) != 0) {
+// 			perror(path);
+// 			exit(1);
+// 		}
+// 	}
+// 	printf("serve directory '%s'\n", path);
 
-	listenfd = open_listenfd(default_port);
-	if (listenfd > 0) {
-		printf("listen on port %d, fd is %d\n", default_port, listenfd);
-	} else {
-		perror("ERROR");
-		exit(listenfd);
-	}
-	// Ignore SIGPIPE signal, so if browser cancels the request, it
-	// won't kill the whole process.
-	signal(SIGPIPE, SIG_IGN);
+// 	listenfd = open_listenfd(default_port);
+// 	if (listenfd > 0) {
+// 		printf("listen on port %d, fd is %d\n", default_port, listenfd);
+// 	} else {
+// 		perror("ERROR");
+// 		exit(listenfd);
+// 	}
+// 	// Ignore SIGPIPE signal, so if browser cancels the request, it
+// 	// won't kill the whole process.
+// 	signal(SIGPIPE, SIG_IGN);
 
-	int i=0;
-	for(; i < FORK_COUNT; i++) {
-		int pid = fork();
-		if (pid == 0) {		 //  child
-			while(1) {
-				connfd = accept(listenfd, (SA *)&clientaddr, &clientlen);
-				process(connfd, &clientaddr);
-				close(connfd);
-			}
-		} else if (pid > 0) {   //  parent
-			printf("child pid is %d\n", pid);
-		} else {
-			perror("fork");
-		}
-	}
+// 	int i=0;
+// 	for(; i < FORK_COUNT; i++) {
+// 		int pid = fork();
+// 		if (pid == 0) {		 //  child
+// 			while(1) {
+// 				connfd = accept(listenfd, (SA *)&clientaddr, &clientlen);
+// 				process(connfd, &clientaddr);
+// 				close(connfd);
+// 			}
+// 		} else if (pid > 0) {   //  parent
+// 			printf("child pid is %d\n", pid);
+// 		} else {
+// 			perror("fork");
+// 		}
+// 	}
 
-	while(1) {
-		connfd = accept(listenfd, (SA *)&clientaddr, &clientlen);
-		process(connfd, &clientaddr);
-		close(connfd);
-	}
+// 	while(1) {
+// 		connfd = accept(listenfd, (SA *)&clientaddr, &clientlen);
+// 		process(connfd, &clientaddr);
+// 		close(connfd);
+// 	}
 
-	return 0;
-}
+// 	return 0;
+// }
